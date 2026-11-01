@@ -31,7 +31,8 @@ pipeline {
                     sh '''
                         ${SCANNER_HOME}/bin/sonar-scanner \
                         -Dsonar.projectKey=new1 \
-                        -Dsonar.projectName=new
+                        -Dsonar.projectName=new \
+                        -Dsonar.java.binaries=target/classes
                     '''
                 }
             }
@@ -45,7 +46,10 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-                sh 'docker build -t $DOCKER_IMAGE:$BUILD_ID .'
+                sh '''
+                    docker build \
+                    -t $DOCKER_IMAGE:$BUILD_NUMBER .
+                '''
             }
         }
 
@@ -59,10 +63,13 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        echo "$DOCKER_PASS" | docker login \
-                        -u "$DOCKER_USER" --password-stdin
+                        set -e
 
-                        docker push $DOCKER_IMAGE:$BUILD_ID
+                        echo "$DOCKER_PASS" | docker login \
+                        --username "$DOCKER_USER" \
+                        --password-stdin
+
+                        docker push $DOCKER_IMAGE:$BUILD_NUMBER
 
                         docker logout
                     '''
@@ -73,21 +80,54 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 withCredentials([
-                    file(credentialsId: 'kubeconfig',
-                         variable: 'KUBECONFIG')
+                    file(
+                        credentialsId: 'kubeconfig',
+                        variable: 'KUBECONFIG'
+                    )
                 ]) {
                     sh '''
-                        sed -i "s|IMAGE_PLACEHOLDER|$DOCKER_IMAGE:$BUILD_ID|g" k8s/deployment.yaml
+                        set -e
+
+                        echo "Deploying application to Kubernetes..."
+
+                        sed -i "s|IMAGE_PLACEHOLDER|$DOCKER_IMAGE:$BUILD_NUMBER|g" k8s/deployment.yaml
 
                         kubectl apply -f k8s/deployment.yaml
 
-                        kubectl rollout status deployment/demoapp --timeout=180s
+                        echo "Checking deployed Docker image..."
 
+                        kubectl get deployment demoapp \
+                        -o=jsonpath='{.spec.template.spec.containers[*].image}'
+
+                        echo
+
+                        echo "Waiting for Kubernetes rollout..."
+
+                        kubectl rollout status deployment/demoapp \
+                        --timeout=180s
+
+                        echo "Kubernetes Pods:"
                         kubectl get pods -o wide
+
+                        echo "Kubernetes Services:"
                         kubectl get services
                     '''
                 }
             }
+        }
+    }
+
+    post {
+        success {
+            echo 'SUCCESS: CI/CD Pipeline completed successfully!'
+        }
+
+        failure {
+            echo 'FAILURE: Check Jenkins Console Output.'
+        }
+
+        always {
+            echo 'Jenkins Pipeline execution completed.'
         }
     }
 }
