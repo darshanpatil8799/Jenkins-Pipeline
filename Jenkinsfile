@@ -7,32 +7,26 @@ pipeline {
     }
 
     environment {
-        DOCKER_IMAGE = 'darshanpatil0507/demo'
-<<<<<<< HEAD
-        SONAR_PROJECT_KEY = 'new1'
-        SONAR_PROJECT_NAME = 'new'
-=======
->>>>>>> 9d4acd4fc0013aade1984053da99f3bde5732a10
         SCANNER_HOME = tool 'sonar-scanner'
+
+        DOCKER_IMAGE = 'darshanpatil0507/demo'
+
+        SONAR_PROJECT_NAME = 'new'
+        SONAR_PROJECT_KEY = 'new1'
     }
 
     stages {
 
         stage('Git Checkout') {
             steps {
-                checkout scm
+                git branch: 'main',
+                    url: 'https://github.com/ebotsmith2000/jenkins-pipeline.git'
             }
         }
 
-<<<<<<< HEAD
-        stage('Compile') {
-            steps {
-                sh 'mvn -B clean compile'
-=======
         stage('Code Compile') {
             steps {
                 sh 'mvn clean compile'
->>>>>>> 9d4acd4fc0013aade1984053da99f3bde5732a10
             }
         }
 
@@ -40,50 +34,19 @@ pipeline {
             steps {
                 withSonarQubeEnv('SonarQube') {
                     sh '''
-                        ${SCANNER_HOME}/bin/sonar-scanner \
-<<<<<<< HEAD
-                        -Dsonar.projectKey=$SONAR_PROJECT_KEY \
-                        -Dsonar.projectName=$SONAR_PROJECT_NAME \
-=======
-                        -Dsonar.projectKey=new1 \
-                        -Dsonar.projectName=new \
->>>>>>> 9d4acd4fc0013aade1984053da99f3bde5732a10
+                        $SCANNER_HOME/bin/sonar-scanner \
+                        -Dsonar.projectName=${SONAR_PROJECT_NAME} \
+                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                        -Dsonar.sources=src \
                         -Dsonar.java.binaries=target/classes
                     '''
                 }
             }
         }
 
-<<<<<<< HEAD
-        stage('Build and Test') {
+        stage('Maven Build') {
             steps {
-                sh 'mvn -B clean package'
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true,
-                          testResults: 'target/surefire-reports/*.xml'
-                }
-            }
-        }
-
-        stage('Docker Build') {
-            steps {
-                sh 'docker build -t $DOCKER_IMAGE:$BUILD_NUMBER .'
-            }
-        }
-
-        stage('Push to Docker Hub') {
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'Dockerhub_cred',
-                        usernameVariable: 'DOCKERHUB_USERNAME',
-                        passwordVariable: 'DOCKERHUB_PASSWORD'
-=======
-        stage('Code Build') {
-            steps {
-                sh 'mvn clean install'
+                sh 'mvn clean package -DskipTests'
             }
         }
 
@@ -91,40 +54,19 @@ pipeline {
             steps {
                 sh '''
                     docker build \
-                    -t $DOCKER_IMAGE:$BUILD_NUMBER .
+                    -t ${DOCKER_IMAGE}:${BUILD_NUMBER} .
                 '''
             }
         }
 
         stage('Docker Image Push') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'Dockerhub_cred',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
->>>>>>> 9d4acd4fc0013aade1984053da99f3bde5732a10
-                    )
-                ]) {
+                withDockerRegistry(
+                    credentialsId: 'Dockerhub_cred',
+                    url: 'https://index.docker.io/v1/'
+                ) {
                     sh '''
-                        set -e
-<<<<<<< HEAD
-                        echo "$DOCKERHUB_PASSWORD" | docker login \
-                        -u "$DOCKERHUB_USERNAME" --password-stdin
-
-                        docker push "$DOCKER_IMAGE:$BUILD_NUMBER"
-                        docker tag "$DOCKER_IMAGE:$BUILD_NUMBER" "$DOCKER_IMAGE:latest"
-                        docker push "$DOCKER_IMAGE:latest"
-=======
-
-                        echo "$DOCKER_PASS" | docker login \
-                        --username "$DOCKER_USER" \
-                        --password-stdin
-
-                        docker push $DOCKER_IMAGE:$BUILD_NUMBER
-
->>>>>>> 9d4acd4fc0013aade1984053da99f3bde5732a10
-                        docker logout
+                        docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
                     '''
                 }
             }
@@ -133,13 +75,6 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 withCredentials([
-<<<<<<< HEAD
-                    file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')
-                ]) {
-                    sh '''
-                        set -e
-                        export KUBECONFIG="$KUBECONFIG_FILE"
-=======
                     file(
                         credentialsId: 'kubeconfig',
                         variable: 'KUBECONFIG'
@@ -149,34 +84,29 @@ pipeline {
                         set -e
 
                         echo "Deploying application to Kubernetes..."
->>>>>>> 9d4acd4fc0013aade1984053da99f3bde5732a10
 
-                        sed -i "s|IMAGE_PLACEHOLDER|$DOCKER_IMAGE:$BUILD_NUMBER|g" k8s/deployment.yaml
+                        echo "Docker Image: ${DOCKER_IMAGE}:${BUILD_NUMBER}"
 
+                        # Replace image placeholder with current build image
+                        sed -i "s|IMAGE_PLACEHOLDER|${DOCKER_IMAGE}:${BUILD_NUMBER}|g" \
+                        k8s/deployment.yaml
+
+                        # Verify generated image
+                        grep "image:" k8s/deployment.yaml
+
+                        # Validate Kubernetes configuration
+                        kubectl apply --dry-run=client -f k8s/deployment.yaml
+
+                        # Deploy application
                         kubectl apply -f k8s/deployment.yaml
 
-<<<<<<< HEAD
-                        kubectl rollout status deployment/demoapp --timeout=180s
-
-                        kubectl get pods -o wide
-=======
-                        echo "Checking deployed Docker image..."
-
-                        kubectl get deployment demoapp \
-                        -o=jsonpath='{.spec.template.spec.containers[*].image}'
-
-                        echo
-
-                        echo "Waiting for Kubernetes rollout..."
-
+                        # Wait for successful deployment
                         kubectl rollout status deployment/demoapp \
                         --timeout=180s
 
-                        echo "Kubernetes Pods:"
+                        # Display deployment information
+                        kubectl get deployments
                         kubectl get pods -o wide
-
-                        echo "Kubernetes Services:"
->>>>>>> 9d4acd4fc0013aade1984053da99f3bde5732a10
                         kubectl get services
                     '''
                 }
@@ -185,19 +115,12 @@ pipeline {
     }
 
     post {
-<<<<<<< HEAD
-        always {
-            sh 'docker image prune -f || true'
-            echo 'Pipeline execution completed.'
-        }
         success {
-            echo 'SUCCESS: CI/CD pipeline completed successfully.'
-        }
-        failure {
-            echo 'FAILURE: Check the stage console output.'
-=======
-        success {
-            echo 'SUCCESS: CI/CD Pipeline completed successfully!'
+            echo 'SUCCESS: CI/CD Pipeline completed!'
+            echo 'Maven build completed successfully!'
+            echo 'SonarQube analysis completed!'
+            echo 'Docker image pushed successfully!'
+            echo 'Application deployed to Kubernetes!'
         }
 
         failure {
@@ -206,7 +129,6 @@ pipeline {
 
         always {
             echo 'Jenkins Pipeline execution completed.'
->>>>>>> 9d4acd4fc0013aade1984053da99f3bde5732a10
         }
     }
 }
